@@ -1,22 +1,25 @@
-# Compiler
-CC = gcc
+# --- Base config ---
 
-# Source files
-SRC = gui.c
-
-# Output binary
+SRC    = gui.c
 TARGET = client
 
-# GTK compile and link flags via pkg-config
-GTK_FLAGS = $(shell pkg-config --cflags --libs gtk+-3.0)
+CC     = gcc
+CFLAGS = -Wall -g `pkg-config --cflags gtk+-3.0`
+LIBS   = `pkg-config --libs gtk+-3.0`
 
-# Default rule
+UNAME_S := $(shell uname -s)
+
+# Windows (MSYS2 / MinGW)
+ifeq ($(findstring MINGW,$(UNAME_S)),MINGW)
+    CC     = x86_64-w64-mingw32-gcc
+    TARGET = chat_client.exe
+    LIBS  += -lws2_32
+endif
+
 all: $(TARGET)
 
-# Build the executable
 $(TARGET): $(SRC)
-	$(CC) $(SRC) -o $(TARGET) $(GTK_FLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LIBS)
 
-# Remove compiled files
 clean:
 	rm -f $(TARGET)

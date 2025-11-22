@@ -4,11 +4,59 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <gtk/gtk.h>  
+#include <gtk/gtk.h>
+
+#if _WIN32
+    #pragma message("Compiling with _WIN32 defined")
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    typedef SOCKET socket_t;
+#else
+    #pragma message("Compiling WITHOUT _WIN32")
+    #include <unistd.h>
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+    typedef int socket_t;
+#endif
+
+#ifdef _WIN32
+static int net_init(void){
+    WSADATA wsaData;
+    int r = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if (r != 0){
+        fprintf(stderr,"WSAStartup failed: %d\n",r);
+        return -1;
+    }
+    return 0;
+}
+
+static void net_cleanup(void){
+    WSACleanup();
+}
+
+static void net_close(socket_t s){
+    if (s != INVALID_SOCKET){
+        closesocket(s);
+    }
+}
+
+#else
+static int net_init(void){
+    return 0;
+}
+
+static void net_cleanup(void){
+
+}
+
+static void net_close(socket_t s){
+    if (s >= 0){
+        close(s);
+    }
+}
+#endif
+
 
 #define SERVER_IP   "207.244.241.177"
 #define SERVER_PORT 5000
@@ -23,7 +71,7 @@ typedef void (*MessageHandler)(ChatApp *app, const char *msg);
 
 // Define the ChatApp struct
 struct ChatApp {
-    int sockfd;
+    socket_t sockfd;
     int connected;
     char username[NAME_SIZE];
     MessageHandler on_message;
@@ -42,10 +90,17 @@ int app_connect_and_join(ChatApp *app, const char *server_ip, int port, const ch
 
     // Create TCP socket
     app->sockfd = socket(AF_INET, SOCK_STREAM, 0);
+#ifdef _WIN32
+    if (app->sockfd == INVALID_SOCKET) {
+        fprintf(stderr, "socket failed: %d\n", WSAGetLastError());
+        return -1;
+    }
+#else
     if (app->sockfd == -1) {
         perror("socket");
         return -1;
     }
+#endif
 
     // Fill server address
     memset(&server_addr, 0, sizeof(server_addr));
@@ -53,15 +108,24 @@ int app_connect_and_join(ChatApp *app, const char *server_ip, int port, const ch
     server_addr.sin_port = htons(port);
 
     if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
+
+#ifdef _WIN32
+        fprintf(stderr, "inet_pton() failed: %d\n", WSAGetLastError());
+#else
         perror("inet_pton");
-        close(app->sockfd);
+#endif
+        net_close(app->sockfd);
         return -1;
     }
 
     // Connect to server
     if (connect(app->sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+#ifdef _WIN32
+        fprintf(stderr, "connect() failed: %d\n", WSAGetLastError());
+#else
         perror("connect");
-        close(app->sockfd);
+#endif
+        net_close(app->sockfd);
         return -1;
     }
 
@@ -70,8 +134,12 @@ int app_connect_and_join(ChatApp *app, const char *server_ip, int port, const ch
     // Send JOIN username
     snprintf(buffer, sizeof(buffer), "JOIN %s\n", username);
     if (send(app->sockfd, buffer, strlen(buffer), 0) == -1) {
+#ifdef _WIN32
+        fprintf(stderr, "send() failed: %d\n", WSAGetLastError());
+#else
         perror("send JOIN");
-        close(app->sockfd);
+#endif
+        net_close(app->sockfd);
         return -1;
     }
 
@@ -165,7 +233,7 @@ void on_send_clicked(GtkWidget *widget, gpointer data) {
 // Function to close the app connection upon exit
 void app_close(ChatApp *app) {
     if (app->connected) {
-        close(app->sockfd);
+        net_close(app->sockfd);
         app->connected = 0;
     }
 }
@@ -290,6 +358,10 @@ gboolean socket_readable_cb(GIOChannel *source, GIOCondition cond, gpointer data
 
 
 int main(int argc, char *argv[]) {
+    if (net_init() != 0){
+        fprintf(stderr,"Network initialization failed.\n");
+        return EXIT_FAILURE;
+    }
     gtk_init(&argc, &argv);
 
     ChatApp app = {0};
@@ -301,19 +373,26 @@ int main(int argc, char *argv[]) {
     char username[NAME_SIZE];
     if (!ask_username(GTK_WINDOW(app.window), username, sizeof(username))) {
         fprintf(stderr, "No username entered, exiting.\n");
+        net_cleanup();
         return EXIT_FAILURE;
     }
 
     // Connect to server and JOIN
     if (app_connect_and_join(&app, SERVER_IP, SERVER_PORT, username) != 0) {
         fprintf(stderr, "Failed to connect and join.\n");
+        net_cleanup();
         return EXIT_FAILURE;
     }
+#ifdef _WIN32
+    GIOChannel *channel = g_io_channel_win32_new_socket(app.sockfd);
+#else
     GIOChannel *channel = g_io_channel_unix_new(app.sockfd);
+#endif
     g_io_add_watch(channel,G_IO_IN | G_IO_HUP | G_IO_ERR,socket_readable_cb,&app);
 
     gtk_main();
 
     app_close(&app);
+    net_cleanup();
     return 0;
 }
