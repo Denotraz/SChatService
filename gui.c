@@ -1,4 +1,6 @@
-// simple_client.c
+/* 
+    Simple chat client using C sockets and GTK for UI 
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,7 +8,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <gtk/gtk.h>   // not used yet, but okay to keep for now
+#include <gtk/gtk.h>  
 
 #define SERVER_IP   "207.244.241.177"
 #define SERVER_PORT 5000
@@ -26,13 +28,14 @@ struct ChatApp {
     char username[NAME_SIZE];
     MessageHandler on_message;
 
-    //Gtk Widgets
+    // Gtk Widgets
     GtkWidget *chat_view;
     GtkTextBuffer *chat_buffer;
     GtkWidget *entry;
     GtkWidget *window;
 };
 
+// Function 
 int app_connect_and_join(ChatApp *app, const char *server_ip, int port, const char *username) {
     struct sockaddr_in server_addr;
     char buffer[BUF_SIZE];
@@ -79,6 +82,7 @@ int app_connect_and_join(ChatApp *app, const char *server_ip, int port, const ch
     return 0;
 }
 
+// Function to send a message to the server
 int app_send_message(ChatApp *app, const char *message) {
     if (!app->connected) {
         fprintf(stderr, "Not connected to server.\n");
@@ -94,6 +98,7 @@ int app_send_message(ChatApp *app, const char *message) {
     return 0;
 }
 
+// Function to receive messages from the server
 void app_receive_loop(ChatApp *app) {
     char buffer[BUF_SIZE];
 
@@ -135,7 +140,7 @@ void app_receive_loop(ChatApp *app) {
     }
 }
 
-
+// Function called when Send button is clicked
 void on_send_clicked(GtkWidget *widget, gpointer data) {
     ChatApp *app = (ChatApp *)data;
 
@@ -157,7 +162,7 @@ void on_send_clicked(GtkWidget *widget, gpointer data) {
     gtk_entry_set_text(GTK_ENTRY(app->entry), "");
 }
 
-
+// Function to close the app connection upon exit
 void app_close(ChatApp *app) {
     if (app->connected) {
         close(app->sockfd);
@@ -165,26 +170,28 @@ void app_close(ChatApp *app) {
     }
 }
 
+// Function to handle incoming messages in the GUI
 void gui_message_handler(ChatApp *app, const char *msg) {
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(app->chat_buffer, &end);
     gtk_text_buffer_insert(app->chat_buffer, &end, msg, -1);
 }
 
+// Function to setup the GTK GUI
 void setup_gui(ChatApp *app) {
 
-    // --- Main window ---
+    // Main window
     app->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(app->window), "Chat Client");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 500, 400);
 
     g_signal_connect(app->window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
-    // --- Vertical layout ---
+    // Vertical layout
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_add(GTK_CONTAINER(app->window), vbox);
 
-    // --- Chat text view ---
+    // Chat text view
     app->chat_view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(app->chat_view), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(app->chat_view), FALSE);
@@ -196,7 +203,7 @@ void setup_gui(ChatApp *app) {
 
     gtk_box_pack_start(GTK_BOX(vbox), scroll, TRUE, TRUE, 0);
 
-    // --- Entry + Send button ---
+    // Entry + Send button
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
 
@@ -206,13 +213,14 @@ void setup_gui(ChatApp *app) {
     GtkWidget *send_button = gtk_button_new_with_label("Send");
     gtk_box_pack_start(GTK_BOX(hbox), send_button, FALSE, FALSE, 0);
 
-    // --- Signals ---
+    // Signals
     g_signal_connect(send_button, "clicked", G_CALLBACK(on_send_clicked), app);
     g_signal_connect(app->entry, "activate", G_CALLBACK(on_send_clicked), app);
 
     gtk_widget_show_all(app->window);
 }
 
+// Function to prompt user for a username
 static gboolean ask_username(GtkWindow *parent, char *out, size_t out_size) {
     GtkWidget *dialog = gtk_dialog_new_with_buttons(
         "Enter Username",
@@ -243,7 +251,7 @@ static gboolean ask_username(GtkWindow *parent, char *out, size_t out_size) {
     gtk_widget_destroy(dialog);
     return ok;
 }
-
+// Funcrtion to handle socket readability
 gboolean socket_readable_cb(GIOChannel *source, GIOCondition cond, gpointer data) {
     ChatApp *app = (ChatApp *)data;
     char buffer[BUF_SIZE];
